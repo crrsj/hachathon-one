@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: voodata
+      POSTGRES_USER: usuario
+      POSTGRES_PASSWORD: senha_segura
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - flight-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usuario -d voodata"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. API Python (Flask)
+  app-python:
+    build:
+      context: ./prediction-service
+    container_name: python_ai_api
+    ports:
+      - "5000:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - flight-network
+
+
+  app:
+    build:
+      context: .
+    container_name: spring_app
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      app-python:
+        condition: service_started
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/voodata
+      - SPRING_DATASOURCE_USERNAME=usuario
+      - SPRING_DATASOURCE_PASSWORD=senha_segura
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+
+      - API_PYTHON_URL=http://app-python:5000
+    networks:
+      - flight-network
+
+
+  frontend:
+    build:
+      context: ./prediction-front
+    container_name: flightontime_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - app
+    networks:
+      - flight-network
+
+networks:
+  flight-network:
+    driver: bridge
+
+volumes:
+  pgdata:
